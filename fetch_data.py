@@ -93,7 +93,8 @@ def append_and_trim(df_new, file_path, hours=24):
     else:
         df_all = df_new.copy()
 
-    df_all["timestamp_utc"] = pd.to_datetime(df_all["timestamp_utc"], utc=True)
+    # df_all["timestamp_utc"] = pd.to_datetime(df_all["timestamp_utc"], utc=True)
+    df_all["timestamp_utc"] = pd.to_datetime(df_all["timestamp_utc"], format="ISO8601", utc=True)
     df_all = df_all[df_all["timestamp_utc"] >= cutoff_time]
     df_all.to_csv(file_path, index=False)
     print(f"Saved {len(df_all)} rows to {file_path}")
