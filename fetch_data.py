@@ -1,9 +1,11 @@
 """
 fetch_data.py - Incremental real-time VA discharge fetch
 
-Fetches only readings since the last timestamp in each North/South CSV.
+Fetches only readings since the last timestamp.
 Keeps a rolling 24-hour window.
 Handles empty fetches safely.
+Includes latitude and longitude columns.
+Saves all data into a single CSV.
 """
 
 import os
@@ -17,11 +19,9 @@ from datetime import datetime, timedelta, timezone
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-NORTH_FILE = os.path.join(DATA_DIR, "north_va.csv")
-SOUTH_FILE = os.path.join(DATA_DIR, "south_va.csv")
+DATA_FILE = os.path.join(DATA_DIR, "gauge_data.csv")
 
 NWIS_IV_URL = "https://waterservices.usgs.gov/nwis/iv/"
-LATITUDE_MIDPOINT = 37.5
 
 # ------------------------------
 # HELPER FUNCTIONS
@@ -52,6 +52,7 @@ def fetch_va_iv_since(start_time):
         site_no = ts["sourceInfo"]["siteCode"][0]["value"]
         site_name = ts["sourceInfo"]["siteName"]
         lat = ts["sourceInfo"]["geoLocation"]["geogLocation"]["latitude"]
+        lon = ts["sourceInfo"]["geoLocation"]["geogLocation"]["longitude"]
         for v in ts["values"][0]["value"]:
             try:
                 flow = float(v["value"])
@@ -63,7 +64,8 @@ def fetch_va_iv_since(start_time):
                 "site_name": site_name,
                 "timestamp_utc": timestamp,
                 "flow_cfs": flow,
-                "north_south": "north" if lat >= LATITUDE_MIDPOINT else "south"
+                "latitude": lat,
+                "longitude": lon
             })
     df = pd.DataFrame(rows)
     return df
@@ -93,7 +95,6 @@ def append_and_trim(df_new, file_path, hours=24):
     else:
         df_all = df_new.copy()
 
-    # df_all["timestamp_utc"] = pd.to_datetime(df_all["timestamp_utc"], utc=True)
     df_all["timestamp_utc"] = pd.to_datetime(df_all["timestamp_utc"], format="ISO8601", utc=True)
     df_all = df_all[df_all["timestamp_utc"] >= cutoff_time]
     df_all.to_csv(file_path, index=False)
@@ -104,22 +105,15 @@ def append_and_trim(df_new, file_path, hours=24):
 # ------------------------------
 
 def main():
-    # Determine last timestamps
-    last_north = load_last_timestamp(NORTH_FILE)
-    last_south = load_last_timestamp(SOUTH_FILE)
+    # Determine last timestamp
+    last_time = load_last_timestamp(DATA_FILE)
 
     # Fetch new readings since last timestamp
-    df = fetch_va_iv_since(min(last_north, last_south))
+    df = fetch_va_iv_since(last_time)
     print(f"Fetched {len(df)} readings total.")
 
     if not df.empty:
-        # Split north/south and save
-        north_df = df[df["north_south"] == "north"].drop(columns=["north_south"])
-        south_df = df[df["north_south"] == "south"].drop(columns=["north_south"])
-
-        append_and_trim(north_df, NORTH_FILE)
-        append_and_trim(south_df, SOUTH_FILE)
-
+        append_and_trim(df, DATA_FILE)
         print("Update complete!")
     else:
         print("No new readings since last timestamp. Nothing to update.")
